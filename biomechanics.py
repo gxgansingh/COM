@@ -43,25 +43,78 @@ class PosturalTelemetry:
     bos_min_cm: float
     bos_max_cm: float
     margin_of_stability_cm: float
-    stability_index: float  # Normalized [0.0 = unstable, 1.0 = centered]
+    stability_index: float  # Normalized [-1.0 = unstable, 1.0 = centered]
     status: str             # "STABLE", "WARNING", or "UNSTABLE"
     posture_label: str
     segments: List[SegmentCOMResult]
 
 
+def compute_base_of_support(
+    aug: Dict[str, Tuple[float, float, float]], frame_w: int, frame_h: int
+) -> Tuple[int, int, int, str]:
+    """
+    Determines active ground contact boundaries (BOS) from ankle, heel, and toe landmarks.
+    Automatically detects single-leg stance when one foot is significantly elevated.
+    """
+    left_y = max(aug["left_heel"][1], aug["left_foot_index"][1], aug["left_ankle"][1])
+    right_y = max(aug["right_heel"][1], aug["right_foot_index"][1], aug["right_ankle"][1])
+
+    left_x_pts = [
+        aug["left_ankle"][0] * frame_w,
+        aug["left_heel"][0] * frame_w,
+        aug["left_foot_index"][0] * frame_w,
+    ]
+    right_x_pts = [
+        aug["right_ankle"][0] * frame_w,
+        aug["right_heel"][0] * frame_w,
+        aug["right_foot_index"][0] * frame_w,
+    ]
+
+    # Check if one foot is lifted off the ground
+    if (right_y - left_y) > SINGLE_LEG_LIFT_THRESHOLD_RATIO:
+        active_x = right_x_pts
+        stance = "Single-Leg (Right)"
+    elif (left_y - right_y) > SINGLE_LEG_LIFT_THRESHOLD_RATIO:
+        active_x = left_x_pts
+        stance = "Single-Leg (Left)"
+    else:
+        active_x = left_x_pts + right_x_pts
+        hip_y = aug["mid_hip"][1]
+        knee_y = 0.5 * (aug["left_knee"][1] + aug["right_knee"][1])
+        if (knee_y - hip_y) < 0.11:
+            stance = "Squatting"
+        else:
+            stance = "Bipedal Standing"
+
+    pad_px = int(frame_w * 0.012)
+    bos_min_px = int(round(min(active_x))) - pad_px
+    bos_max_px = int(round(max(active_x))) + pad_px
+    bos_y_px = int(round(max(left_y, right_y) * frame_h))
+
+    return bos_min_px, bos_max_px, bos_y_px, stance
+
+
 class BiomechanicalAnalyzer:
     """Computes human Center of Mass and postural stability from 2D pose landmarks."""
 
-    def __init__(self, subject_height_cm: float = DEFAULT_SUBJECT_HEIGHT_CM, history_len: int = 90) -> None:
+    def __init__(
+        self,
+        subject_height_cm: float = DEFAULT_SUBJECT_HEIGHT_CM,
+        history_len: int = 90,
+    ) -> None:
         self.subject_height_cm = subject_height_cm
         self.com_history_px: Deque[Tuple[int, int]] = deque(maxlen=history_len)
+        self.velocity_window: Deque[float] = deque(maxlen=5)
         self.baseline_com_cm: Optional[Tuple[float, float]] = None
+        self.calibrated_cm_per_px: Optional[float] = None
         self.prev_com_cm: Optional[Tuple[float, float]] = None
         self.prev_timestamp_s: Optional[float] = None
 
     def reset_baseline(self) -> None:
-        """Resets the reference standing COM position."""
+        """Resets the reference standing COM position and metric scale factor."""
         self.baseline_com_cm = None
+        self.calibrated_cm_per_px = None
+        self.velocity_window.clear()
 
     @staticmethod
     def _augment_virtual_joints(
@@ -84,10 +137,13 @@ class BiomechanicalAnalyzer:
         )
         return aug
 
-    def _estimate_px_to_cm_scale(
+    def _get_cm_per_px_scale(
         self, aug_landmarks: Dict[str, Tuple[float, float, float]], frame_h: int
     ) -> float:
-        """Estimates centimeter-per-pixel scale using vertical span of the subject."""
+        """
+        Computes and locks the centimeter-per-pixel scale factor from initial standing posture
+        so that squatting does not artificially alter metric scaling.
+        """
         nose_y = aug_landmarks["nose"][1] * frame_h
         ankle_y = max(
             aug_landmarks["left_heel"][1],
@@ -96,7 +152,22 @@ class BiomechanicalAnalyzer:
             aug_landmarks["right_ankle"][1],
         ) * frame_h
         apparent_height_px = max(abs(ankle_y - nose_y) * 1.08, frame_h * 0.35)
-        return self.subject_height_cm / apparent_height_px
+        instant_scale = self.subject_height_cm / apparent_height_px
+
+        if self.calibrated_cm_per_px is None:
+            self.calibrated_cm_per_px = instant_scale
+        else:
+            # Update only if the subject stands taller than initial calibration
+            self.calibrated_cm_per_px = min(self.calibrated_cm_per_px, instant_scale)
+
+        return self.calibrated_cm_per_px
+
+    @staticmethod
+    def _compute_base_of_support(
+        aug: Dict[str, Tuple[float, float, float]], frame_w: int, frame_h: int
+    ) -> Tuple[int, int, int, str]:
+        """Wrapper around top-level compute_base_of_support for class-level calls."""
+        return compute_base_of_support(aug, frame_w, frame_h)
 
     def analyze_frame(
         self,
@@ -114,7 +185,7 @@ class BiomechanicalAnalyzer:
             COM = sum(m_i * r_i) / sum(m_i)
         """
         aug = self._augment_virtual_joints(landmarks)
-        cm_per_px = self._estimate_px_to_cm_scale(aug, frame_h)
+        cm_per_px = self._get_cm_per_px_scale(aug, frame_h)
 
         segments_out: List[SegmentCOMResult] = []
         weighted_x = 0.0
@@ -128,15 +199,15 @@ class BiomechanicalAnalyzer:
             com_x_norm = prox[0] + seg_def.com_ratio * (dist[0] - prox[0])
             com_y_norm = prox[1] + seg_def.com_ratio * (dist[1] - prox[1])
 
-            prox_px = (int(prox[0] * frame_w), int(prox[1] * frame_h))
-            dist_px = (int(dist[0] * frame_w), int(dist[1] * frame_h))
-            com_px = (int(com_x_norm * frame_w), int(com_y_norm * frame_h))
+            prox_px = (int(round(prox[0] * frame_w)), int(round(prox[1] * frame_h)))
+            dist_px = (int(round(dist[0] * frame_w)), int(round(dist[1] * frame_h)))
+            com_px = (int(round(com_x_norm * frame_w)), int(round(com_y_norm * frame_h)))
 
             segments_out.append(
                 SegmentCOMResult(
                     name=seg_def.name,
                     proximal_px=prox_px,
-                    distal_px=dist_px,
+                    distal_px=distal_px if "distal_px" in locals() else dist_px,
                     com_px=com_px,
                     com_norm=(com_x_norm, com_y_norm),
                     mass_fraction=seg_def.mass_fraction,
@@ -148,13 +219,18 @@ class BiomechanicalAnalyzer:
             total_mass += seg_def.mass_fraction
 
         total_com_norm = (weighted_x / total_mass, weighted_y / total_mass)
-        total_com_px = (int(total_com_norm[0] * frame_w), int(total_com_norm[1] * frame_h))
+
+        # Use continuous sub-pixel floating-point coordinates for accurate kinematics
+        exact_com_x_px = total_com_norm[0] * frame_w
+        exact_com_y_px = total_com_norm[1] * frame_h
+
+        total_com_px = (int(round(exact_com_x_px)), int(round(exact_com_y_px)))
         self.com_history_px.append(total_com_px)
 
-        # Convert COM to metric coordinates relative to frame origin (centered X, inverted Y)
+        # Convert exact sub-pixel COM to metric coordinates (cm)
         com_cm = (
-            (total_com_px[0] - frame_w * 0.5) * cm_per_px,
-            (frame_h - total_com_px[1]) * cm_per_px,
+            (exact_com_x_px - frame_w * 0.5) * cm_per_px,
+            (frame_h - exact_com_y_px) * cm_per_px,
         )
 
         if self.baseline_com_cm is None:
@@ -164,13 +240,15 @@ class BiomechanicalAnalyzer:
             np.hypot(com_cm[0] - self.baseline_com_cm[0], com_cm[1] - self.baseline_com_cm[1])
         )
 
-        # Calculate instantaneous sway velocity (cm/s)
+        # Calculate smoothed instantaneous sway velocity (cm/s)
         if self.prev_com_cm is not None and self.prev_timestamp_s is not None:
             dt = max(timestamp_s - self.prev_timestamp_s, 1e-3)
             dist_step = float(
                 np.hypot(com_cm[0] - self.prev_com_cm[0], com_cm[1] - self.prev_com_cm[1])
             )
-            sway_velocity_cm_s = dist_step / dt
+            raw_vel = dist_step / dt
+            self.velocity_window.append(raw_vel)
+            sway_velocity_cm_s = float(np.mean(self.velocity_window))
         else:
             sway_velocity_cm_s = 0.0
 
@@ -178,7 +256,7 @@ class BiomechanicalAnalyzer:
         self.prev_timestamp_s = timestamp_s
 
         # Compute Base of Support (BOS) active contact points
-        bos_min_px, bos_max_px, bos_y_px, detected_stance = self._compute_base_of_support(
+        bos_min_px, bos_max_px, bos_y_px, detected_stance = compute_base_of_support(
             aug, frame_w, frame_h
         )
         bos_min_cm = (bos_min_px - frame_w * 0.5) * cm_per_px
@@ -223,49 +301,3 @@ class BiomechanicalAnalyzer:
             posture_label=posture_label,
             segments=segments_out,
         )
-
-    @staticmethod
-    def _compute_base_of_support(
-        aug: Dict[str, Tuple[float, float, float]], frame_w: int, frame_h: int
-    ) -> Tuple[int, int, int, str]:
-        """
-        Determines active ground contact boundaries (BOS) from ankle, heel, and toe landmarks.
-        Automatically detects single-leg stance when one foot is significantly elevated.
-        """
-        left_y = max(aug["left_heel"][1], aug["left_foot_index"][1], aug["left_ankle"][1])
-        right_y = max(aug["right_heel"][1], aug["right_foot_index"][1], aug["right_ankle"][1])
-
-        left_x_pts = [
-            aug["left_ankle"][0] * frame_w,
-            aug["left_heel"][0] * frame_w,
-            aug["left_foot_index"][0] * frame_w,
-        ]
-        right_x_pts = [
-            aug["right_ankle"][0] * frame_w,
-            aug["right_heel"][0] * frame_w,
-            aug["right_foot_index"][0] * frame_w,
-        ]
-
-        # Check if one foot is lifted off the ground
-        if (right_y - left_y) > SINGLE_LEG_LIFT_THRESHOLD_RATIO:
-            active_x = right_x_pts
-            stance = "Single-Leg (Right)"
-        elif (left_y - right_y) > SINGLE_LEG_LIFT_THRESHOLD_RATIO:
-            active_x = left_x_pts
-            stance = "Single-Leg (Left)"
-        else:
-            active_x = left_x_pts + right_x_pts
-            # Infer squat vs standing from hip-to-knee vertical separation
-            hip_y = aug["mid_hip"][1]
-            knee_y = 0.5 * (aug["left_knee"][1] + aug["right_knee"][1])
-            if (knee_y - hip_y) < 0.11:
-                stance = "Squatting"
-            else:
-                stance = "Bipedal Standing"
-
-        pad_px = int(frame_w * 0.012)
-        bos_min_px = int(min(active_x)) - pad_px
-        bos_max_px = int(max(active_x)) + pad_px
-        bos_y_px = int(max(left_y, right_y) * frame_h)
-
-        return bos_min_px, bos_max_px, bos_y_px, stance
