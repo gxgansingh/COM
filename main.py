@@ -7,6 +7,7 @@ import argparse
 import csv
 import time
 from pathlib import Path
+from typing import Optional
 import cv2
 
 from biomechanics import BiomechanicalAnalyzer, PosturalTelemetry
@@ -89,10 +90,15 @@ def parse_args() -> argparse.Namespace:
         help="Run without opening an OpenCV GUI window (useful for batch processing).",
     )
     parser.add_argument(
+        "--save-video",
+        action="store_true",
+        help="Save the annotated biomechanical HUD video to outputs/annotated_session.mp4.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("outputs"),
-        help="Directory to save CSV telemetry and Matplotlib report.",
+        help="Directory to save CSV telemetry, video, and Matplotlib report.",
     )
     parser.add_argument(
         "--show-report",
@@ -107,20 +113,29 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = args.output_dir / "com_telemetry.csv"
     report_path = args.output_dir / "biomechanical_report.png"
+    video_out_path = args.output_dir / "annotated_session.mp4"
 
     analyzer = BiomechanicalAnalyzer(subject_height_cm=args.height_cm)
     visualizer = BiomechanicalVisualizer()
     detector = PoseDetector()
 
     use_demo = args.demo
-    cap = None
+    cap: Optional[cv2.VideoCapture] = None
+    video_writer: Optional[cv2.VideoWriter] = None
 
     if not use_demo:
-        source = int(args.source) if args.source.isdigit() else args.source
-        cap = cv2.VideoCapture(source)
-        if not cap.isOpened():
-            print("[WARNING] Could not open video source. Falling back to --demo simulation mode.")
+        if detector.pose is None:
+            print(
+                "[WARNING] MediaPipe Pose is not initialized in this Python environment. "
+                "Falling back to --demo simulation mode."
+            )
             use_demo = True
+        else:
+            source = int(args.source) if args.source.isdigit() else args.source
+            cap = cv2.VideoCapture(source)
+            if not cap.isOpened():
+                print("[WARNING] Could not open video source. Falling back to --demo simulation mode.")
+                use_demo = True
 
     print("[INFO] Starting Biomechanical COM & Postural Stability Analyzer...")
     print(f"[INFO] Mode: {'Synthetic Biomechanical Simulation (--demo)' if use_demo else f'Live/Video ({args.source})'}")
@@ -141,8 +156,7 @@ def main() -> None:
                     break
 
                 if use_demo:
-                    # Use deterministic 30 FPS time step in headless batch runs
-                    sim_t = (frame_idx / 30.0) if args.headless else elapsed_s
+                    sim_t = (frame_idx / 30.0) if (args.headless or args.save_video) else elapsed_s
                     frame, landmarks, posture_hint = (
                         SyntheticBiomechanicsSimulator.generate_frame_and_landmarks(sim_t)
                     )
@@ -184,6 +198,16 @@ def main() -> None:
                         cv2.LINE_AA,
                     )
 
+                # Initialize MP4 VideoWriter on the first frame if --save-video is enabled
+                if args.save_video and video_writer is None:
+                    fh, fw = annotated_frame.shape[:2]
+                    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                    video_writer = cv2.VideoWriter(str(video_out_path), fourcc, 30.0, (fw, fh))
+                    print(f"[INFO] Recording annotated video to: {video_out_path}")
+
+                if video_writer is not None:
+                    video_writer.write(annotated_frame)
+
                 frame_idx += 1
 
                 if not args.headless:
@@ -191,7 +215,7 @@ def main() -> None:
                         "Vision-Based COM Estimation & Postural Stability (21MEO103T)",
                         annotated_frame,
                     )
-                    key = cv2.waitKey(1 if not use_demo else 30) & 0xFF
+                    key = cv2.waitKey(1 if not use_demo else 25) & 0xFF
                     if key in (ord("q"), ord("Q"), 27):
                         print("[INFO] User terminated session.")
                         break
@@ -201,6 +225,9 @@ def main() -> None:
         finally:
             if cap is not None:
                 cap.release()
+            if video_writer is not None:
+                video_writer.release()
+                print(f"[INFO] Saved annotated video: {video_out_path}")
             detector.close()
             if not args.headless:
                 cv2.destroyAllWindows()
