@@ -1,7 +1,6 @@
 # Vision-Based Center of Mass (COM) Estimation & Postural Stability Analysis
 
-**Course:** Fundamentals of Biomechanics (`21MEO103T`)  
-**Domain:** Markerless Motion Capture · Computational Biomechanics · Postural Control & Balance
+**Domain:** Markerless Motion Capture ·  Postural Control & Balance
 
 > *"From a simple camera feed to a measurable biomechanical representation of human balance."*
 
