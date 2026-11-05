@@ -85,7 +85,7 @@ class SyntheticBiomechanicsSimulator:
 
         # Cycle through 5 distinct biomechanical test phases (20-second loop)
         cycle_t = timestamp_s % 20.0
-        micro_sway = 0.004 * math.sin(timestamp_s * 3.2)
+        micro_sway = 0.003 * math.sin(timestamp_s * 3.0)
 
         lean_x = 0.0
         squat_depth = 0.0
@@ -97,46 +97,48 @@ class SyntheticBiomechanicsSimulator:
         elif cycle_t < 8.0:
             phase_label = "Lateral Lean (Within BOS)"
             alpha = math.sin(((cycle_t - 4.0) / 4.0) * math.pi)
-            lean_x = 0.048 * alpha + micro_sway
+            lean_x = 0.052 * alpha + micro_sway
         elif cycle_t < 12.0:
             phase_label = "Deep Squatting"
             alpha = math.sin(((cycle_t - 8.0) / 4.0) * math.pi)
-            squat_depth = 0.125 * alpha
-            lean_x = micro_sway * 1.5
+            squat_depth = 0.135 * alpha
+            lean_x = micro_sway * 1.2
         elif cycle_t < 16.0:
             phase_label = "Single-Leg Balance"
             alpha = math.sin(((cycle_t - 12.0) / 4.0) * math.pi)
-            left_foot_lift = 0.075 * alpha
-            lean_x = -0.038 * alpha + micro_sway
+            left_foot_lift = 0.080 * alpha
+            # Shift torso over the supporting right leg (-X) to maintain single-leg balance
+            lean_x = -0.072 * alpha + micro_sway
         else:
             phase_label = "Extreme Lean (Unstable)"
             alpha = math.sin(((cycle_t - 16.0) / 4.0) * math.pi)
-            lean_x = 0.095 * alpha + micro_sway
+            # Excursion beyond BOS boundary to trigger UNSTABLE fall-risk state
+            lean_x = 0.125 * alpha + micro_sway
 
         cx = 0.50
         ground_y = 0.84
 
         # Construct anatomically proportioned 2D landmarks
-        hip_x = cx + lean_x * 0.70
+        hip_x = cx + lean_x * 0.75
         hip_y = 0.52 + squat_depth
 
-        shoulder_x = cx + lean_x * 1.15
-        shoulder_y = 0.28 + squat_depth * 0.85
+        shoulder_x = cx + lean_x * 1.18
+        shoulder_y = 0.28 + squat_depth * 0.88
 
         knee_out = squat_depth * 0.35
         landmarks: Dict[str, Tuple[float, float, float]] = {
             "nose": (shoulder_x + lean_x * 0.15, shoulder_y - 0.10, 0.99),
             "left_shoulder": (shoulder_x + 0.065, shoulder_y, 0.99),
             "right_shoulder": (shoulder_x - 0.065, shoulder_y, 0.99),
-            "left_elbow": (shoulder_x + 0.085 + lean_x * 0.2, shoulder_y + 0.12, 0.99),
-            "right_elbow": (shoulder_x - 0.085 + lean_x * 0.2, shoulder_y + 0.12, 0.99),
-            "left_wrist": (shoulder_x + 0.095 + lean_x * 0.3, shoulder_y + 0.23, 0.99),
-            "right_wrist": (shoulder_x - 0.095 + lean_x * 0.3, shoulder_y + 0.23, 0.99),
+            "left_elbow": (shoulder_x + 0.085 + lean_x * 0.20, shoulder_y + 0.12, 0.99),
+            "right_elbow": (shoulder_x - 0.085 + lean_x * 0.20, shoulder_y + 0.12, 0.99),
+            "left_wrist": (shoulder_x + 0.095 + lean_x * 0.30, shoulder_y + 0.23, 0.99),
+            "right_wrist": (shoulder_x - 0.095 + lean_x * 0.30, shoulder_y + 0.23, 0.99),
             "left_hip": (hip_x + 0.042, hip_y, 0.99),
             "right_hip": (hip_x - 0.042, hip_y, 0.99),
             "left_knee": (
                 cx + 0.048 + knee_out + lean_x * 0.25,
-                0.68 + squat_depth * 0.35 - left_foot_lift * 0.5,
+                0.68 + squat_depth * 0.35 - left_foot_lift * 0.55,
                 0.99,
             ),
             "right_knee": (
