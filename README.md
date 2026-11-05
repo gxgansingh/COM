@@ -1,6 +1,7 @@
 # Vision-Based Center of Mass (COM) Estimation & Postural Stability Analysis
- 
-**Domain:** Markerless Motion Capture · Postural Control & Balance
+
+**Course:** Fundamentals of Biomechanics (`21MEO103T`)  
+**Domain:** Markerless Motion Capture · Computational Biomechanics · Postural Control & Balance
 
 > *"From a simple camera feed to a measurable biomechanical representation of human balance."*
 
@@ -69,19 +70,19 @@ The software follows a modular, sequential biomechanical processing pipeline:
 ### 3.1 Virtual Joint Synthesis
 Standard pose estimation detectors provide bilateral shoulder and hip keypoints (`left_shoulder`, `right_shoulder`, `left_hip`, `right_hip`), whereas Winter's axial segment definitions require central trunk endpoints. Prior to segment evaluation, the engine synthesizes two virtual joints:
 
-$$\mathbf{p}_{\text{mid-shoulder}} = \frac{\mathbf{p}_{\text{left-shoulder}} + \mathbf{p}_{\text{right-shoulder}}}{2}, \quad \mathbf{p}_{\text{mid-hip}} = \frac{\mathbf{p}_{\text{left-hip}} + \mathbf{p}_{\text{right-hip}}}{2}$$
+$$\mathbf{p}_{\mathrm{midShoulder}} = \frac{\mathbf{p}_{\mathrm{leftShoulder}} + \mathbf{p}_{\mathrm{rightShoulder}}}{2}, \quad \mathbf{p}_{\mathrm{midHip}} = \frac{\mathbf{p}_{\mathrm{leftHip}} + \mathbf{p}_{\mathrm{rightHip}}}{2}$$
 
 ### 3.2 Individual Segment COM Calculation
-For each of the $N = 14$ anatomical segments, the segment Center of Mass $\mathbf{r}_i = (x_i, y_i)$ lies along the vector connecting its **proximal joint** $\mathbf{p}_{\text{prox}, i}$ to its **distal joint** $\mathbf{p}_{\text{dist}, i}$ at an anthropometric fraction $c_i$:
+For each of the $N = 14$ anatomical segments, the segment Center of Mass $\mathbf{r}_i = (x_i, y_i)$ lies along the vector connecting its **proximal joint** $\mathbf{p}_{\mathrm{prox}, i}$ to its **distal joint** $\mathbf{p}_{\mathrm{dist}, i}$ at an anthropometric fraction $c_i$:
 
-$$\mathbf{r}_i = \mathbf{p}_{\text{prox}, i} + c_i \left( \mathbf{p}_{\text{dist}, i} - \mathbf{p}_{\text{prox}, i} \right)$$
+$$\mathbf{r}_i = \mathbf{p}_{\mathrm{prox}, i} + c_i \left( \mathbf{p}_{\mathrm{dist}, i} - \mathbf{p}_{\mathrm{prox}, i} \right)$$
 
 ### 3.3 Whole-Body Center of Mass (Total COM)
-By applying the principle of moments (Varignon's Theorem), the total body Center of Mass $\mathbf{R}_{\text{COM}} = (X_{\text{COM}}, Y_{\text{COM}})$ is the mass-weighted average of all 14 segment COMs:
+By applying the principle of moments (Varignon's Theorem), the total body Center of Mass $\mathbf{R}_{\mathrm{COM}} = (X_{\mathrm{COM}}, Y_{\mathrm{COM}})$ is the mass-weighted average of all 14 segment COMs:
 
-$$\mathbf{R}_{\text{COM}} = \frac{\sum_{i=1}^{14} m_i \, \mathbf{r}_i}{\sum_{i=1}^{14} m_i}$$
+$$\mathbf{R}_{\mathrm{COM}} = \frac{\sum_{i=1}^{14} m_i \, \mathbf{r}_i}{\sum_{i=1}^{14} m_i}$$
 
-where $m_i$ is the segment mass fraction ($m_i / M_{\text{total}}$) and $\sum_{i=1}^{14} m_i = 1.000$.
+where $m_i$ is the segment mass fraction ($m_i / M_{\mathrm{total}}$) and $\sum_{i=1}^{14} m_i = 1.000$.
 
 ### 3.4 14-Segment Anthropometric Model Table (Winter, 2009)
 The exact anthropometric constants implemented in `config.py` are listed below:
@@ -105,49 +106,49 @@ The exact anthropometric constants implemented in `config.py` are listed below:
 | **—** | **Total Body** | — | — | **`1.0000` (100%)** | — |
 
 ### 3.5 Sub-Pixel Metric Calibration & Standing Scale Lock
-To convert pixel coordinates into physical centimeters ($\text{cm}$) without requiring a physical checkerboard in the scene:
-1. The subject's known height $H_{\text{cm}}$ (configurable via `--height-cm`, default `172.0 cm`) is divided by the apparent vertical pixel span from the lowest ground-contact foot landmark to the cranial vertex (`1.08 × |y_ankle - y_nose|`).
+To convert pixel coordinates into physical centimeters ($\mathrm{cm}$) without requiring a physical checkerboard in the scene:
+1. The subject's known height $H_{\mathrm{cm}}$ (configurable via `--height-cm`, default `172.0 cm`) is divided by the apparent vertical pixel span from the lowest ground-contact foot landmark to the cranial vertex (`1.08 × |y_ankle - y_nose|`).
 2. **Squat Distortion Prevention:** If the pixel-to-centimeter scale were recalculated naively on every frame, lowering the head during a squat would make the algorithm assume the person shrank, artificially inflating metric distances. To prevent this, `biomechanics.py` locks `calibrated_cm_per_px` to the tallest standing posture observed (or resets upon pressing **`R`**).
-3. **Sub-Pixel Kinematics:** All metric conversions ($\text{COM}_X$, $\text{COM}_Y$, displacement, and velocity) are computed directly from floating-point normalized coordinates prior to integer pixel rounding, eliminating quantization stair-stepping and velocity spikes.
+3. **Sub-Pixel Kinematics:** All metric conversions ($\mathrm{COM}_X$, $\mathrm{COM}_Y$, displacement, and velocity) are computed directly from floating-point normalized coordinates prior to integer pixel rounding, eliminating quantization stair-stepping and velocity spikes.
 
 ### 3.6 Dynamic Base of Support (BOS) & Single-Leg Detection
-The Base of Support in the frontal/coronal plane is bounded horizontally by $\left[\text{BOS}_{\min}, \text{BOS}_{\max}\right]$:
+The Base of Support in the frontal/coronal plane is bounded horizontally by $\left[\mathrm{BOS}_{\min}, \mathrm{BOS}_{\max}\right]$:
 * **Bipedal Stance:** Uses the horizontal span across all six foot landmarks (`left/right ankle`, `heel`, and `foot_index`).
 * **Single-Leg Stance Detection:** If the vertical elevation difference between the left and right feet exceeds `SINGLE_LEG_LIFT_THRESHOLD_RATIO` ($4.5\%$ of frame height), the lifted foot is excluded from ground contact, and the active BOS automatically contracts to the supporting foot alone.
 * **Squat Classification:** When both feet remain grounded and the normalized hip-to-knee vertical separation drops below `0.11`, the posture classifier labels the phase as `Squatting`.
 
 ### 3.7 Margin of Stability (MoS), Stability Index & State Classification
-* **Signed Margin of Stability ($\text{MoS}$):** Measures the minimum horizontal distance from the vertical projection of the COM (Line of Gravity) to the nearest active BOS boundary:
+* **Signed Margin of Stability ($\mathrm{MoS}$):** Measures the minimum horizontal distance from the vertical projection of the COM (Line of Gravity) to the nearest active BOS boundary:
 
-$$\text{MoS} = \min\left( X_{\text{COM}} - \text{BOS}_{\min}, \; \text{BOS}_{\max} - X_{\text{COM}} \right)$$
+$$\mathrm{MoS} = \min\left( X_{\mathrm{COM}} - \mathrm{BOS}_{\min}, \; \mathrm{BOS}_{\max} - X_{\mathrm{COM}} \right)$$
 
-  * $\text{MoS} > 0\text{ cm}$: Line of Gravity is **inside** the Base of Support.
-  * $\text{MoS} = 0\text{ cm}$: Line of Gravity is **on the edge** of the Base of Support.
-  * $\text{MoS} < 0\text{ cm}$: Line of Gravity has **exited** the Base of Support (Unstable / Fall Risk).
+  * $\mathrm{MoS} > 0\;\mathrm{cm}$: Line of Gravity is **inside** the Base of Support.
+  * $\mathrm{MoS} = 0\;\mathrm{cm}$: Line of Gravity is **on the edge** of the Base of Support.
+  * $\mathrm{MoS} < 0\;\mathrm{cm}$: Line of Gravity has **exited** the Base of Support (Unstable / Fall Risk).
 
 * **Normalized Stability Index ($SI$):**
 
-$$SI = \operatorname{clip}\left( \frac{\text{MoS}}{0.5 \times (\text{BOS}_{\max} - \text{BOS}_{\min})}, \; -1.0, \; +1.0 \right)$$
+$$SI = \mathrm{clip}\left( \frac{\mathrm{MoS}}{0.5 \times (\mathrm{BOS}_{\max} - \mathrm{BOS}_{\min})}, \; -1.0, \; +1.0 \right)$$
 
   where $100\%$ indicates the COM is dead-center over the Base of Support, $0\%$ is on the boundary edge, and negative values indicate boundary excursion.
 
 * **Three-Tier Stability Classification:**
-  * 🟢 **`STABLE`**: $\text{MoS} \ge 0.20 \times \left(\frac{\text{BOS}_{\text{width}}}{2}\right)$
-  * 🟡 **`WARNING`**: $0 \le \text{MoS} < 0.20 \times \left(\frac{\text{BOS}_{\text{width}}}{2}\right)$ (within the outer $20\%$ warning buffer of the BOS)
-  * 🔴 **`UNSTABLE`**: $\text{MoS} < 0\text{ cm}$ (Line of Gravity outside the BOS)
+  * 🟢 **`STABLE`**: $\mathrm{MoS} \ge 0.20 \times \left(\frac{\mathrm{BOS}_{\mathrm{width}}}{2}\right)$
+  * 🟡 **`WARNING`**: $0 \le \mathrm{MoS} < 0.20 \times \left(\frac{\mathrm{BOS}_{\mathrm{width}}}{2}\right)$ (within the outer $20\%$ warning buffer of the BOS)
+  * 🔴 **`UNSTABLE`**: $\mathrm{MoS} < 0\;\mathrm{cm}$ (Line of Gravity outside the BOS)
 
 ### 3.8 Postural Sway Kinematics
-* **COM Excursion / Displacement ($D_{\text{COM}}$):** Euclidean distance from the initial calibrated quiet-standing baseline COM $(X_0, Y_0)$:
+* **COM Excursion / Displacement ($D_{\mathrm{COM}}$):** Euclidean distance from the initial calibrated quiet-standing baseline COM $(X_0, Y_0)$:
 
-$$D_{\text{COM}}(t) = \sqrt{\left(X_{\text{COM}}(t) - X_0\right)^2 + \left(Y_{\text{COM}}(t) - Y_0\right)^2}$$
+$$D_{\mathrm{COM}}(t) = \sqrt{\left(X_{\mathrm{COM}}(t) - X_0\right)^2 + \left(Y_{\mathrm{COM}}(t) - Y_0\right)^2}$$
 
-* **Instantaneous Sway Velocity ($V_{\text{sway}}$):** Filtered using a 5-frame moving average window to suppress high-frequency camera jitter:
+* **Instantaneous Sway Velocity ($V_{\mathrm{sway}}$):** Filtered using a 5-frame moving average window to suppress high-frequency camera jitter:
 
-$$V_{\text{sway}}(t_k) = \frac{1}{W} \sum_{j=0}^{W-1} \frac{\Vert{}\mathbf{R}_{\text{COM}}(t_{k-j}) - \mathbf{R}_{\text{COM}}(t_{k-j-1})\Vert{}_2}{\Delta t_{k-j}}$$
+$$V_{\mathrm{sway}}(t_k) = \frac{1}{W} \sum_{j=0}^{W-1} \frac{\Vert{}\mathbf{R}_{\mathrm{COM}}(t_{k-j}) - \mathbf{R}_{\mathrm{COM}}(t_{k-j-1})\Vert{}_2}{\Delta t_{k-j}}$$
 
-* **Total Sway Path Length ($L_{\text{path}}$):** Cumulative trajectory length traveled by the COM over an entire session of $K$ frames:
+* **Total Sway Path Length ($L_{\mathrm{path}}$):** Cumulative trajectory length traveled by the COM over an entire session of $K$ frames:
 
-$$L_{\text{path}} = \sum_{k=1}^{K-1} \sqrt{\left(X_{\text{COM}}(t_k) - X_{\text{COM}}(t_{k-1})\right)^2 + \left(Y_{\text{COM}}(t_k) - Y_{\text{COM}}(t_{k-1})\right)^2}$$
+$$L_{\mathrm{path}} = \sum_{k=1}^{K-1} \sqrt{\left(X_{\mathrm{COM}}(t_k) - X_{\mathrm{COM}}(t_{k-1})\right)^2 + \left(Y_{\mathrm{COM}}(t_k) - Y_{\mathrm{COM}}(t_{k-1})\right)^2}$$
 
 ---
 
@@ -174,7 +175,7 @@ COM/
 * **`config.py`**: Defines the immutable `SegmentDefinition` dataclass, maps the 17 essential MediaPipe Pose landmark indices, stores the 14-segment `ANTHROPOMETRIC_SEGMENTS` tuple, sets biomechanical thresholds (`DEFAULT_SUBJECT_HEIGHT_CM`, `SINGLE_LEG_LIFT_THRESHOLD_RATIO`, `STABILITY_WARNING_MARGIN_RATIO`), and centralizes the OpenCV BGR color palette.
 * **`biomechanics.py`**: Houses `SegmentCOMResult`, `PosturalTelemetry`, `compute_base_of_support()`, and `BiomechanicalAnalyzer`. Handles virtual joint synthesis, locked standing metric calibration, weighted COM summation, dynamic BOS contact detection, Margin of Stability computation, and smoothed sway velocity calculation.
 * **`pose_detector.py`**: Provides `PoseDetector` (interfacing with `mediapipe.solutions.pose.Pose` with temporal landmark smoothing) and `SyntheticBiomechanicsSimulator`, which generates a deterministic 20-second, 5-phase biomechanical test loop when no camera is attached or `--demo` is passed.
-* **`visualizer.py`**: Implements `BiomechanicalVisualizer`. Draws anatomical segment bones, joint nodes, cyan segment COM dots, the orange Total COM crosshair, a 90-frame trajectory trail, a dashed vertical Line of Gravity, a translucent Base of Support bar, a top-left telemetry dashboard, and a top-right scrolling strip chart of $\text{COM}_X$ vs. BOS limits.
+* **`visualizer.py`**: Implements `BiomechanicalVisualizer`. Draws anatomical segment bones, joint nodes, cyan segment COM dots, the orange Total COM crosshair, a 90-frame trajectory trail, a dashed vertical Line of Gravity, a translucent Base of Support bar, a top-left telemetry dashboard, and a top-right scrolling strip chart of $\mathrm{COM}_X$ vs. BOS limits.
 * **`report_generator.py`**: Standalone and integrated post-processing module. Reads `outputs/com_telemetry.csv`, computes whole-session summary statistics in the terminal, and renders a non-overlapping, `250 DPI` 4-panel Matplotlib figure (`outputs/biomechanical_report.png`).
 * **`main.py`**: Orchestrates CLI argument parsing, webcam/video/demo initialization, real-time frame processing, CSV streaming, optional `.mp4` video recording, keyboard event handling, and automatic report generation upon exit.
 
@@ -281,11 +282,11 @@ To enable reproducible testing, classroom demonstrations, and verification of ed
 
 | Time Window | Posture Phase Label | Kinematic Behavior | Expected Stability Outcome |
 | :---: | :--- | :--- | :--- |
-| **`0.0 – 4.0 s`** | `Quiet Standing` | Upright bipedal posture with realistic physiological micro-sway ($0.5\text{ Hz}$). | 🟢 `STABLE` ($\text{MoS} \approx +33\text{ cm}$) |
-| **`4.0 – 8.0 s`** | `Lateral Lean (Within BOS)` | Controlled mediolateral trunk and hip shift to the right (+X) up to $+18\text{ cm}$. | 🟢 `STABLE` ($\text{MoS}$ decreases to $\approx +16\text{ cm}$) |
-| **`8.0 – 12.0 s`** | `Deep Squatting` | Bilateral knee and hip flexion lowering vertical $\text{COM}_Y$ from $128.5\text{ cm}$ to $103.0\text{ cm}$. | 🟢 `STABLE` (BOS stays constant; vertical excursion peaks at $\approx 26\text{ cm}$) |
-| **`12.0 – 16.0 s`** | `Single-Leg Balance` | Left foot lifts off the ground; pelvis and torso shift laterally over the right stance foot ($-27\text{ cm}$). | 🟢/🟡 `STABLE` $\rightarrow$ `WARNING` (BOS contracts sharply to the right foot only) |
-| **`16.0 – 20.0 s`** | `Extreme Lean (Unstable)` | Aggressive lateral lean (+X up to $+44.3\text{ cm}$) pushing the Line of Gravity outside the right foot. | 🔴 `UNSTABLE` ($\text{MoS}$ drops to $-10\text{ cm}$, triggering red excursion alert) |
+| **`0.0 – 4.0 s`** | `Quiet Standing` | Upright bipedal posture with realistic physiological micro-sway ($0.5\;\mathrm{Hz}$). | 🟢 `STABLE` ($\mathrm{MoS} \approx +33\;\mathrm{cm}$) |
+| **`4.0 – 8.0 s`** | `Lateral Lean (Within BOS)` | Controlled mediolateral trunk and hip shift to the right (+X) up to $+18\;\mathrm{cm}$. | 🟢 `STABLE` ($\mathrm{MoS}$ decreases to $\approx +16\;\mathrm{cm}$) |
+| **`8.0 – 12.0 s`** | `Deep Squatting` | Bilateral knee and hip flexion lowering vertical $\mathrm{COM}_Y$ from $128.5\;\mathrm{cm}$ to $103.0\;\mathrm{cm}$. | 🟢 `STABLE` (BOS stays constant; vertical excursion peaks at $\approx 26\;\mathrm{cm}$) |
+| **`12.0 – 16.0 s`** | `Single-Leg Balance` | Left foot lifts off the ground; pelvis and torso shift laterally over the right stance foot ($-27\;\mathrm{cm}$). | 🟢/🟡 `STABLE` $\rightarrow$ `WARNING` (BOS contracts sharply to the right foot only) |
+| **`16.0 – 20.0 s`** | `Extreme Lean (Unstable)` | Aggressive lateral lean (+X up to $+44.3\;\mathrm{cm}$) pushing the Line of Gravity outside the right foot. | 🔴 `UNSTABLE` ($\mathrm{MoS}$ drops to $-10\;\mathrm{cm}$, triggering red excursion alert) |
 
 ---
 
@@ -297,8 +298,8 @@ Every session automatically populates the `outputs/` directory with up to three 
 * **Skeletal Overlay:** Grey anatomical segment links with orange joint landmarks and cyan segment COM markers ($\bullet$).
 * **Total Body COM Marker:** High-visibility orange crosshair with a 90-frame trajectory trail.
 * **Line of Gravity & BOS Bar:** Dashed vertical projection line intersecting a dynamically colored Base of Support bar (`Green = STABLE`, `Yellow = WARNING`, `Red = UNSTABLE`).
-* **Top-Left Telemetry Panel:** Displays real-time Posture Phase, Stability State, $\text{COM}_X / \text{COM}_Y$ ($\text{cm}$), COM Displacement ($\text{cm}$), Sway Velocity ($\text{cm/s}$), Margin of Stability ($\text{cm}$), and Stability Index ($\%$).
-* **Top-Right Live Strip Chart:** Scrolling 120-frame time series plotting $\text{COM}_X$ against the upper and lower BOS boundaries.
+* **Top-Left Telemetry Panel:** Displays real-time Posture Phase, Stability State, $\mathrm{COM}_X / \mathrm{COM}_Y$ ($\mathrm{cm}$), COM Displacement ($\mathrm{cm}$), Sway Velocity ($\mathrm{cm/s}$), Margin of Stability ($\mathrm{cm}$), and Stability Index ($\%$).
+* **Top-Right Live Strip Chart:** Scrolling 120-frame time series plotting $\mathrm{COM}_X$ against the upper and lower BOS boundaries.
 
 ### 8.2 Telemetry CSV Log (`outputs/com_telemetry.csv`)
 Contains frame-by-frame kinematic data formatted for direct import into MATLAB, Excel, R, or Python:
@@ -314,15 +315,15 @@ Contains frame-by-frame kinematic data formatted for direct import into MATLAB, 
 | `com_displacement_cm` | `cm` | Euclidean distance of COM from initial standing baseline. |
 | `sway_velocity_cm_s` | `cm/s` | 5-frame smoothed instantaneous COM sway speed. |
 | `bos_min_cm`, `bos_max_cm` | `cm` | Left and right horizontal boundaries of active Base of Support. |
-| `margin_of_stability_cm` | `cm` | Signed distance from COM projection to nearest BOS edge ($\text{MoS}$). |
+| `margin_of_stability_cm` | `cm` | Signed distance from COM projection to nearest BOS edge ($\mathrm{MoS}$). |
 | `stability_index` | `[-1, 1]` | Normalized stability score relative to half-BOS width. |
 
 ### 8.3 Automated 4-Panel Matplotlib Report (`outputs/biomechanical_report.png`)
 Generated automatically at `250 DPI` when a session completes:
-1. **Panel 1 — Lateral COM Trajectory vs. Base of Support:** Plots mediolateral $\text{COM}_X$ (orange) inside the shaded green Base of Support safe zone, clearly illustrating BOS narrowing during single-leg stance and boundary violation during extreme leaning.
-2. **Panel 2 — Vertical COM Profile & Total Excursion:** Dual-axis plot showing vertical $\text{COM}_Y$ height changes (blue solid line, highlighting squat depth) alongside total Euclidean displacement from baseline (purple dashed line).
-3. **Panel 3 — Frontal Plane COM Trajectory (Statokinesigram):** 2D spatial scatter and path plot of $\text{COM}_X$ vs. $\text{COM}_Y$ color-coded by time (`viridis` colormap) with explicit `Start` (green circle) and `End` (red cross) markers.
-4. **Panel 4 — Margin of Stability (MoS) & Postural Sway Velocity:** Dual-axis plot displaying $\text{MoS}$ (teal) relative to the $\text{MoS} = 0$ red dashed threshold, automatically shading unstable excursions ($\text{MoS} < 0$) in red alongside instantaneous sway velocity (orange dash-dot curve).
+1. **Panel 1 — Lateral COM Trajectory vs. Base of Support:** Plots mediolateral $\mathrm{COM}_X$ (orange) inside the shaded green Base of Support safe zone, clearly illustrating BOS narrowing during single-leg stance and boundary violation during extreme leaning.
+2. **Panel 2 — Vertical COM Profile & Total Excursion:** Dual-axis plot showing vertical $\mathrm{COM}_Y$ height changes (blue solid line, highlighting squat depth) alongside total Euclidean displacement from baseline (purple dashed line).
+3. **Panel 3 — Frontal Plane COM Trajectory (Statokinesigram):** 2D spatial scatter and path plot of $\mathrm{COM}_X$ vs. $\mathrm{COM}_Y$ color-coded by time (`viridis` colormap) with explicit `Start` (green circle) and `End` (red cross) markers.
+4. **Panel 4 — Margin of Stability (MoS) & Postural Sway Velocity:** Dual-axis plot displaying $\mathrm{MoS}$ (teal) relative to the $\mathrm{MoS} = 0$ red dashed threshold, automatically shading unstable excursions ($\mathrm{MoS} < 0$) in red alongside instantaneous sway velocity (orange dash-dot curve).
 
 ---
 
@@ -330,14 +331,14 @@ Generated automatically at `250 DPI` when a session completes:
 
 ### Current Limitations
 * **2D Planar Projection:** Single-camera analysis operates in the 2D image plane (primarily frontal/coronal or sagittal depending on camera placement) and does not capture simultaneous anteroposterior + mediolateral depth without a second camera or depth sensor.
-* **Static vs. Dynamic Stability (XCoM):** The current stability criterion compares the vertical projection of the COM against the BOS. For high-velocity ballistic movements (e.g., sprinting or jumping), Hof's **Extrapolated Center of Mass ($\text{XCoM}$)** incorporating pendulum eigenfrequency $\omega_0 = \sqrt{g / l}$ can be added.
+* **Static vs. Dynamic Stability (XCoM):** The current stability criterion compares the vertical projection of the COM against the BOS. For high-velocity ballistic movements (e.g., sprinting or jumping), Hof's **Extrapolated Center of Mass ($\mathrm{XCoM}$)** incorporating pendulum eigenfrequency $\omega_0 = \sqrt{g / l}$ can be added.
 * **Anthropometric Generalization:** Cadaver-derived segment mass fractions (Winter, 2009) represent population averages and do not account for individual body composition variations or external loads (e.g., holding a barbell).
 
 ### Future Scope
-* Integration of **Hof's Extrapolated Center of Mass ($\text{XCoM}$)** for dynamic gait and jump landing analysis.
+* Integration of **Hof's Extrapolated Center of Mass ($\mathrm{XCoM}$)** for dynamic gait and jump landing analysis.
 * Addition of **joint angle kinematics** (knee flexion, hip flexion, and trunk lean angles in degrees).
 * Development of an interactive **Streamlit Web Dashboard** for clinical trial comparison and PDF report export.
-* Validation against laboratory **ground-reaction force plates** (Center of Pressure $\text{COP}$ vs. vision-estimated $\text{COM}$).
+* Validation against laboratory **ground-reaction force plates** (Center of Pressure $\mathrm{COP}$ vs. vision-estimated $\mathrm{COM}$).
 
 ---
 
