@@ -4,6 +4,7 @@ Center of Mass trajectory, Base of Support region, and telemetry HUD.
 """
 
 from collections import deque
+import math
 from typing import Deque, Tuple
 import cv2
 import numpy as np
@@ -203,9 +204,10 @@ class BiomechanicalVisualizer:
             return int(plot_bottom - norm * plot_h)
 
         n_pts = len(self.com_x_series)
+        max_pts = max((self.com_x_series.maxlen or 120) - 1, 1)
         for i in range(1, n_pts):
-            px1 = x0 + 10 + int((i - 1) / max(self.com_x_series.maxlen - 1, 1) * (chart_w - 20))
-            px2 = x0 + 10 + int(i / max(self.com_x_series.maxlen - 1, 1) * (chart_w - 20))
+            px1 = x0 + 10 + int((i - 1) / max_pts * (chart_w - 20))
+            px2 = x0 + 10 + int(i / max_pts * (chart_w - 20))
 
             # Draw BOS bounds in muted green
             cv2.line(
