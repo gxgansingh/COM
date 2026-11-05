@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated biomechanical telemetry logs and Matplotlib reports
+outputs/*.csv
+outputs/*.png
+outputs/*.pdf
+!outputs/.gitkeep
