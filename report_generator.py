@@ -88,16 +88,32 @@ def generate_biomechanical_report(
     )
     print("=" * 68)
 
-    # Configure Matplotlib figure aesthetics
-    plt.style.use("seaborn-v0_8-whitegrid" if "seaborn-v0_8-whitegrid" in plt.style.available else "default")
-    fig, axes = plt.subplots(2, 2, figsize=(15, 9.5), dpi=200)
+    # Configure Matplotlib figure aesthetics with constrained_layout to prevent overlaps
+    plt.style.use(
+        "seaborn-v0_8-whitegrid"
+        if "seaborn-v0_8-whitegrid" in plt.style.available
+        else "default"
+    )
+    plt.rcParams.update(
+        {
+            "font.size": 9,
+            "axes.titlesize": 11,
+            "axes.labelsize": 9.5,
+            "xtick.labelsize": 8.5,
+            "ytick.labelsize": 8.5,
+            "legend.fontsize": 8.5,
+        }
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 8.5), dpi=110, constrained_layout=True)
+    fig.set_constrained_layout_pads(w_pad=2.0 / 72.0, h_pad=2.0 / 72.0, hspace=0.06, wspace=0.05)
+
     fig.suptitle(
         "Vision-Based Center of Mass (COM) & Postural Stability Analysis Report\n"
-        f"Total Sway Path: {total_sway_path_cm:.1f} cm | Peak Excursion: {max_disp_cm:.1f} cm | "
-        f"Time Stable: {stable_pct:.1f}%",
-        fontsize=14,
+        f"Total Sway Path: {total_sway_path_cm:.1f} cm  |  Peak Excursion: {max_disp_cm:.1f} cm  |  "
+        f"Stability Breakdown: {stable_pct:.1f}% Stable, {warning_pct:.1f}% Warning, {unstable_pct:.1f}% Unstable",
+        fontsize=12.5,
         fontweight="bold",
-        y=0.98,
     )
 
     # Panel 1: Lateral COM_X vs Dynamic Base of Support (BOS)
@@ -105,78 +121,114 @@ def generate_biomechanical_report(
     ax1.fill_between(
         t, bos_min, bos_max, color="#2ecc71", alpha=0.18, label="Base of Support (Safe Zone)"
     )
-    ax1.plot(t, bos_min, color="#27ae60", linestyle="--", linewidth=1.2, label="BOS Left/Right Limits")
-    ax1.plot(t, bos_max, color="#27ae60", linestyle="--", linewidth=1.2)
+    ax1.plot(t, bos_min, color="#27ae60", linestyle="--", linewidth=1.3, label="BOS Left/Right Limits")
+    ax1.plot(t, bos_max, color="#27ae60", linestyle="--", linewidth=1.3)
     ax1.plot(t, com_x, color="#e67e22", linewidth=2.2, label="Lateral COM ($COM_X$)")
-    ax1.set_title("1. Lateral COM Trajectory vs. Base of Support", fontweight="bold")
+    ax1.set_title("1. Lateral COM Trajectory vs. Base of Support", fontweight="bold", pad=8)
     ax1.set_xlabel("Time (s)")
-    ax1.set_ylabel("Horizontal Position (cm)")
-    ax1.legend(loc="upper right", frameon=True)
+    ax1.set_ylabel("Mediolateral Position X (cm)")
+    ax1.set_ylim(min(np.min(bos_min), np.min(com_x)) - 12.0, max(np.max(bos_max), np.max(com_x)) + 18.0)
+    ax1.legend(loc="upper left", ncol=2, frameon=True, facecolor="white", framealpha=0.9)
     ax1.grid(True, alpha=0.35)
 
     # Panel 2: Vertical COM_Y Profile & Displacement
     ax2 = axes[0, 1]
-    ax2.plot(t, com_y, color="#2980b9", linewidth=2.2, label="Vertical COM ($COM_Y$)")
+    line1 = ax2.plot(t, com_y, color="#2980b9", linewidth=2.2, label="Vertical COM Height ($COM_Y$)")
+    ax2.set_title("2. Vertical COM Profile & Total Excursion", fontweight="bold", pad=8)
+    ax2.set_xlabel("Time (s)")
+    ax2.set_ylabel("Vertical COM Height Y (cm)", color="#2980b9", fontweight="bold")
+    ax2.tick_params(axis="y", labelcolor="#2980b9")
+    y_span = max(np.ptp(com_y), 5.0)
+    ax2.set_ylim(np.min(com_y) - 0.15 * y_span, np.max(com_y) + 0.30 * y_span)
+    ax2.grid(True, alpha=0.35)
+
     ax2_twin = ax2.twinx()
-    ax2_twin.plot(
+    line2 = ax2_twin.plot(
         t,
         data["com_displacement_cm"],
         color="#8e44ad",
-        linestyle=":",
+        linestyle="--",
         linewidth=1.8,
         label="Total Displacement from Baseline",
     )
-    ax2.set_title("2. Vertical COM Profile & Total Excursion", fontweight="bold")
-    ax2.set_xlabel("Time (s)")
-    ax2.set_ylabel("Vertical COM Height (cm)", color="#2980b9")
-    ax2_twin.set_ylabel("Total COM Displacement (cm)", color="#8e44ad")
-    ax2.grid(True, alpha=0.35)
+    ax2_twin.set_ylabel("Total COM Displacement (cm)", color="#8e44ad", fontweight="bold")
+    ax2_twin.tick_params(axis="y", labelcolor="#8e44ad")
+    ax2_twin.set_ylim(0.0, max(np.max(data["com_displacement_cm"]) * 1.25, 10.0))
+    ax2_twin.grid(False)
 
-    lines_1, labels_1 = ax2.get_legend_handles_labels()
-    lines_2, labels_2 = ax2_twin.get_legend_handles_labels()
-    ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right", frameon=True)
+    lines_2 = line1 + line2
+    labels_2 = [l.get_label() for l in lines_2]
+    ax2.legend(lines_2, labels_2, loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
 
     # Panel 3: 2D Frontal-Plane Statokinesigram (COM_X vs COM_Y)
     ax3 = axes[1, 0]
     scatter = ax3.scatter(
-        com_x, com_y, c=t, cmap="viridis", s=18, alpha=0.85, edgecolors="none", label="COM Path"
+        com_x, com_y, c=t, cmap="viridis", s=20, alpha=0.85, edgecolors="none", label="COM Trajectory"
     )
-    ax3.plot(com_x, com_y, color="#34495e", alpha=0.3, linewidth=1.0)
-    ax3.scatter([com_x[0]], [com_y[0]], color="#2ecc71", s=90, marker="o", zorder=5, label="Start")
-    ax3.scatter([com_x[-1]], [com_y[-1]], color="#e74c3c", s=90, marker="X", zorder=5, label="End")
-    cbar = fig.colorbar(scatter, ax=ax3)
+    ax3.plot(com_x, com_y, color="#34495e", alpha=0.30, linewidth=1.0)
+    ax3.scatter([com_x[0]], [com_y[0]], color="#2ecc71", s=80, marker="o", zorder=5, label="Start")
+    ax3.scatter([com_x[-1]], [com_y[-1]], color="#e74c3c", s=80, marker="X", zorder=5, label="End")
+    cbar = fig.colorbar(scatter, ax=ax3, pad=0.02)
     cbar.set_label("Time (s)")
-    ax3.set_title("3. Frontal Plane COM Trajectory (Statokinesigram)", fontweight="bold")
+    ax3.set_title("3. Frontal Plane COM Trajectory (Statokinesigram)", fontweight="bold", pad=8)
     ax3.set_xlabel("Mediolateral COM Position X (cm)")
     ax3.set_ylabel("Vertical COM Position Y (cm)")
-    ax3.legend(loc="best", frameon=True)
+    ax3.legend(loc="lower left", frameon=True, facecolor="white", framealpha=0.9)
     ax3.grid(True, alpha=0.35)
 
     # Panel 4: Margin of Stability (MoS) & Sway Velocity
     ax4 = axes[1, 1]
-    ax4.axhline(0.0, color="#c0392b", linestyle="--", linewidth=1.5, label="BOS Boundary Threshold (MoS = 0)")
+    l_thresh = ax4.axhline(
+        0.0, color="#c0392b", linestyle="--", linewidth=1.4, label="BOS Boundary (MoS = 0)"
+    )
     ax4.fill_between(
-        t, mos, 0.0, where=(mos < 0.0), color="#e74c3c", alpha=0.30, interpolate=True, label="Unstable Excursion"
+        t,
+        mos,
+        0.0,
+        where=(mos < 0.0),
+        color="#e74c3c",
+        alpha=0.28,
+        interpolate=True,
+        label="Unstable Excursion",
     )
-    ax4.plot(t, mos, color="#16a085", linewidth=2.2, label="Margin of Stability (MoS)")
-
-    ax4_twin = ax4.twinx()
-    ax4_twin.plot(
-        t, vel, color="#d35400", alpha=0.55, linewidth=1.2, linestyle="-.", label="Sway Velocity (cm/s)"
-    )
-    ax4.set_title("4. Margin of Stability (MoS) & Postural Sway Velocity", fontweight="bold")
+    l_mos = ax4.plot(t, mos, color="#16a085", linewidth=2.2, label="Margin of Stability (MoS)")
+    ax4.set_title("4. Margin of Stability (MoS) & Postural Sway Velocity", fontweight="bold", pad=8)
     ax4.set_xlabel("Time (s)")
-    ax4.set_ylabel("Margin of Stability (cm)", color="#16a085")
-    ax4_twin.set_ylabel("Sway Velocity (cm/s)", color="#d35400")
+    ax4.set_ylabel("Margin of Stability (cm)", color="#16a085", fontweight="bold")
+    ax4.tick_params(axis="y", labelcolor="#16a085")
+    ax4.set_ylim(min(np.min(mos) - 6.0, -8.0), np.max(mos) + 14.0)
     ax4.grid(True, alpha=0.35)
 
-    lines_4a, labels_4a = ax4.get_legend_handles_labels()
-    lines_4b, labels_4b = ax4_twin.get_legend_handles_labels()
-    ax4.legend(lines_4a + lines_4b, labels_4a + labels_4b, loc="lower left", frameon=True)
+    ax4_twin = ax4.twinx()
+    l_vel = ax4_twin.plot(
+        t,
+        vel,
+        color="#d35400",
+        alpha=0.65,
+        linewidth=1.4,
+        linestyle="-.",
+        label="Sway Velocity (cm/s)",
+    )
+    ax4_twin.set_ylabel("Sway Velocity (cm/s)", color="#d35400", fontweight="bold")
+    ax4_twin.tick_params(axis="y", labelcolor="#d35400")
+    ax4_twin.set_ylim(0.0, max(np.max(vel) * 1.35, 15.0))
+    ax4_twin.grid(False)
 
-    plt.tight_layout(rect=[0, 0.01, 1, 0.94])
+    handles_4, labels_4 = ax4.get_legend_handles_labels()
+    handles_4b, labels_4b = ax4_twin.get_legend_handles_labels()
+    ax4.legend(
+        handles_4 + handles_4b,
+        labels_4 + labels_4b,
+        loc="upper left",
+        ncol=2,
+        frameon=True,
+        facecolor="white",
+        framealpha=0.9,
+    )
+
     output_image_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_image_path, dpi=200)
+    # Save high-resolution 250 DPI file for reports/slides while keeping GUI window well-proportioned
+    fig.savefig(output_image_path, dpi=250)
     print(f"[INFO] Saved Matplotlib biomechanical report to: {output_image_path}")
 
     if show_plot:
