@@ -15,6 +15,9 @@ ENV/
 .DS_Store
 Thumbs.db
 
+# Downloaded MediaPipe Task model weights
+models/*.task
+
 # Generated biomechanical telemetry logs, videos, and Matplotlib reports
 outputs/*.csv
 outputs/*.png
